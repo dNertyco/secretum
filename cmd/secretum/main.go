@@ -13,7 +13,10 @@ import (
 	"time"
 
 	"github.com/dNertyco/secretum/internal/auth"
+	"github.com/dNertyco/secretum/internal/blob"
 	"github.com/dNertyco/secretum/internal/config"
+	"github.com/dNertyco/secretum/internal/documents"
+	"github.com/dNertyco/secretum/internal/envelope"
 	"github.com/dNertyco/secretum/internal/httpapi"
 	"github.com/dNertyco/secretum/internal/postgres"
 	"github.com/dNertyco/secretum/internal/ratelimit"
@@ -59,19 +62,40 @@ func run() error {
 		logger.Info("database migrations applied")
 	}
 
-	authSvc, err := auth.NewService(postgres.NewUsers(pool), auth.NewTokenIssuer(cfg.JWTSecret, cfg.TokenTTL))
+	blobs, err := blob.NewS3(connectCtx, blob.S3Config{
+		Endpoint:  cfg.S3Endpoint,
+		AccessKey: cfg.S3AccessKey,
+		SecretKey: cfg.S3SecretKey,
+		Bucket:    cfg.S3Bucket,
+		UseSSL:    cfg.S3UseSSL,
+	})
+	if err != nil {
+		return fmt.Errorf("connect to object storage: %w", err)
+	}
+
+	keys, err := envelope.NewLocalKeyManager(cfg.MasterKeys, cfg.ActiveKeyID)
+	if err != nil {
+		return fmt.Errorf("init key manager: %w", err)
+	}
+
+	users := postgres.NewUsers(pool)
+	authSvc, err := auth.NewService(users, auth.NewTokenIssuer(cfg.JWTSecret, cfg.TokenTTL))
 	if err != nil {
 		return fmt.Errorf("init auth: %w", err)
 	}
+	docSvc := documents.NewService(postgres.NewDocuments(pool), blobs, keys, users, logger)
 
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Logger:            logger,
 		Build:             httpapi.BuildInfo{Version: version, Commit: commit},
 		Auth:              authSvc,
+		Documents:         docSvc,
+		MaxUploadBytes:    cfg.MaxUploadBytes,
 		LoginLimiter:      ratelimit.New(cfg.LoginRatePerMinute, cfg.LoginRatePerMinute),
 		AllowRegistration: cfg.AllowRegistration,
 		Readiness: map[string]httpapi.ReadinessCheck{
 			"postgres": func(ctx context.Context) error { return pool.Ping(ctx) },
+			"storage":  blobs.Ping,
 		},
 	})
 
@@ -86,7 +110,7 @@ func run() error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("http server started", "addr", cfg.HTTPAddr, "version", version)
+		logger.Info("http server started", "addr", cfg.HTTPAddr, "version", version, "active_kek", keys.ActiveKEKID())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
