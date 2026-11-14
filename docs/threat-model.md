@@ -32,6 +32,19 @@ authorized request.
 | T10 | Documents sent to third-party AI services | Embedding and naming models run locally |
 | T11 | Prompt injection through document text (naming, future RAG) | Strict output format and length; models get no tools and only permitted chunks |
 
+## Metadata stored in plaintext
+
+To keep listing and access checks efficient, some metadata is not encrypted: document and user IDs, owner, version
+numbers, sizes, detected content types, timestamps, permissions and the audit log. Document names and contents are
+encrypted.
+
+## Known limitations
+
+- The local key manager keeps master keys in the service's memory (loaded from configuration). A production
+  deployment should use an external KMS behind the same `KeyManager` interface.
+- Whole files are encrypted in memory; the upload size limit (32 MiB by default) bounds memory use.
+- Rate limits are per service instance.
+
 ## Out of scope
 
 - **Full compromise of the running service.** The service decrypts documents to serve them, so an attacker
