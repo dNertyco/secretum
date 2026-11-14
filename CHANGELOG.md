@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-14
+
 ### Added
 
 - Envelope encryption (AES-256-GCM): per-version data keys, encrypted names, AAD binding to document and version,
@@ -27,3 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dockerfile, Docker Compose stack with PostgreSQL and S3-compatible storage, Makefile.
 - CI: golangci-lint, tests with the race detector, Docker image build.
 - Threat model, contributing guide, security policy.
+
+[Unreleased]: https://github.com/dNertyco/secretum/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/dNertyco/secretum/releases/tag/v0.1.0
