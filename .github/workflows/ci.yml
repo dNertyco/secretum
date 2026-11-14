@@ -44,7 +44,23 @@ jobs:
           --health-retries 10
     env:
       SECRETUM_TEST_DATABASE_URL: postgres://secretum:secretum@localhost:5432/secretum_test?sslmode=disable
+      SECRETUM_TEST_S3_ENDPOINT: localhost:9000
+      SECRETUM_TEST_S3_ACCESS_KEY: secretum
+      SECRETUM_TEST_S3_SECRET_KEY: secretum-secret-key
     steps:
+      # Service containers cannot pass arguments to the image, so the
+      # S3-compatible storage (SeaweedFS) is started explicitly.
+      - name: Start object storage
+        run: |
+          docker run -d --name s3 -p 9000:8333 chrislusf/seaweedfs:4.51 server -s3 -dir=/data
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000/ || true)
+            case "$code" in 2*|3*|4*) sleep 2; exit 0 ;; esac
+            sleep 1
+          done
+          docker logs s3 >&2
+          echo "object storage did not become ready" >&2
+          exit 1
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:

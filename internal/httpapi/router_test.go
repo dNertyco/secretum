@@ -14,25 +14,40 @@ import (
 
 	"github.com/dNertyco/secretum/internal/auth"
 	"github.com/dNertyco/secretum/internal/auth/authtest"
+	"github.com/dNertyco/secretum/internal/blob"
+	"github.com/dNertyco/secretum/internal/documents"
+	"github.com/dNertyco/secretum/internal/documents/doctest"
+	"github.com/dNertyco/secretum/internal/envelope"
 	"github.com/dNertyco/secretum/internal/ratelimit"
 )
 
 type testServer struct {
 	t       *testing.T
 	handler http.Handler
+	blobs   *blob.Memory
 }
 
 func newTestServer(t *testing.T, mutate ...func(*Deps)) *testServer {
 	t.Helper()
-	svc, err := auth.NewService(authtest.NewMemUsers(),
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	users := authtest.NewMemUsers()
+	svc, err := auth.NewService(users,
 		auth.NewTokenIssuer([]byte("0123456789abcdef0123456789abcdef"), time.Minute))
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
+	kek, _ := envelope.NewDataKey()
+	keys, err := envelope.NewLocalKeyManager(map[string][]byte{"k1": kek}, "k1")
+	if err != nil {
+		t.Fatalf("NewLocalKeyManager: %v", err)
+	}
+	blobs := blob.NewMemory()
 	d := Deps{
-		Logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:            logger,
 		Build:             BuildInfo{Version: "test", Commit: "abc123"},
 		Auth:              svc,
+		Documents:         documents.NewService(doctest.NewMemRepo(users), blobs, keys, users, logger),
+		MaxUploadBytes:    1 << 10,
 		LoginLimiter:      ratelimit.New(600, 100),
 		AllowRegistration: true,
 		Readiness:         map[string]ReadinessCheck{"db": func(context.Context) error { return nil }},
@@ -40,7 +55,7 @@ func newTestServer(t *testing.T, mutate ...func(*Deps)) *testServer {
 	for _, m := range mutate {
 		m(&d)
 	}
-	return &testServer{t: t, handler: NewRouter(d)}
+	return &testServer{t: t, handler: NewRouter(d), blobs: blobs}
 }
 
 func (s *testServer) do(method, path string, body any, token string) *httptest.ResponseRecorder {

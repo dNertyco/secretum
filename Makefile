@@ -30,7 +30,7 @@ fmt: ## Format code
 tidy: ## Tidy go.mod
 	go mod tidy
 
-up: ## Start the local stack (app, PostgreSQL, MinIO)
+up: ## Start the local stack (app, PostgreSQL, S3 storage)
 	docker compose up -d --build
 
 down: ## Stop the local stack
