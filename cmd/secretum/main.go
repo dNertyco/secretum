@@ -12,8 +12,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dNertyco/secretum/internal/auth"
 	"github.com/dNertyco/secretum/internal/config"
 	"github.com/dNertyco/secretum/internal/httpapi"
+	"github.com/dNertyco/secretum/internal/postgres"
+	"github.com/dNertyco/secretum/internal/ratelimit"
 )
 
 // Set at build time via -ldflags.
@@ -41,12 +44,43 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	pool, err := postgres.Connect(connectCtx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	if cfg.MigrateOnStart {
+		if err := postgres.Migrate(connectCtx, pool); err != nil {
+			return err
+		}
+		logger.Info("database migrations applied")
+	}
+
+	authSvc, err := auth.NewService(postgres.NewUsers(pool), auth.NewTokenIssuer(cfg.JWTSecret, cfg.TokenTTL))
+	if err != nil {
+		return fmt.Errorf("init auth: %w", err)
+	}
+
+	handler := httpapi.NewRouter(httpapi.Deps{
+		Logger:            logger,
+		Build:             httpapi.BuildInfo{Version: version, Commit: commit},
+		Auth:              authSvc,
+		LoginLimiter:      ratelimit.New(cfg.LoginRatePerMinute, cfg.LoginRatePerMinute),
+		AllowRegistration: cfg.AllowRegistration,
+		Readiness: map[string]httpapi.ReadinessCheck{
+			"postgres": func(ctx context.Context) error { return pool.Ping(ctx) },
+		},
+	})
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(logger, httpapi.BuildInfo{Version: version, Commit: commit}),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
