@@ -1,54 +1,28 @@
-package postgres
+package postgres_test
 
 import (
-	"context"
 	"errors"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/dNertyco/secretum/internal/auth"
+	"github.com/dNertyco/secretum/internal/documents"
+	"github.com/dNertyco/secretum/internal/documents/doctest"
+	"github.com/dNertyco/secretum/internal/postgres"
+	"github.com/dNertyco/secretum/internal/postgres/pgtest"
 )
 
-// testPool connects to the database from SECRETUM_TEST_DATABASE_URL, applies
-// migrations and truncates all tables. The test is skipped when the variable
-// is not set; CI runs these tests against a real PostgreSQL.
-func testPool(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	url := os.Getenv("SECRETUM_TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("SECRETUM_TEST_DATABASE_URL is not set")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	pool, err := Connect(ctx, url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(pool.Close)
-
-	if err := Migrate(ctx, pool); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	if _, err := pool.Exec(ctx, `TRUNCATE users CASCADE`); err != nil {
-		t.Fatalf("truncate: %v", err)
-	}
-	return pool
-}
-
 func TestMigrateIsIdempotent(t *testing.T) {
-	pool := testPool(t)
-	if err := Migrate(t.Context(), pool); err != nil {
+	pool := pgtest.New(t)
+	if err := postgres.Migrate(t.Context(), pool); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
 }
 
 func TestUsers(t *testing.T) {
-	repo := NewUsers(testPool(t))
+	repo := postgres.NewUsers(pgtest.New(t))
 	ctx := t.Context()
 
 	u := auth.User{
@@ -82,4 +56,11 @@ func TestUsers(t *testing.T) {
 	if _, err := repo.UserByID(ctx, uuid.New()); !errors.Is(err, auth.ErrUserNotFound) {
 		t.Errorf("unknown id: err = %v", err)
 	}
+}
+
+func TestDocumentsContract(t *testing.T) {
+	doctest.RunRepositoryContract(t, func(t *testing.T) (documents.Repository, auth.UserRepository) {
+		pool := pgtest.New(t)
+		return postgres.NewDocuments(pool), postgres.NewUsers(pool)
+	})
 }
