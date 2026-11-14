@@ -1,0 +1,22 @@
+# Binaries
+/bin/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Local data
+/data/
+/tmp/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
