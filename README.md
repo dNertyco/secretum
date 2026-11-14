@@ -41,7 +41,7 @@ Why application-level encryption when disks and backups can already be encrypted
 ```text
 client ──► HTTP API (Go) ──► PostgreSQL   metadata, wrapped keys, permissions, audit, vectors
                │
-               ├──────────► MinIO (S3)   encrypted document blobs
+               ├──────────► S3 storage   encrypted document blobs
                │
                └──────────► Key manager  master key, never leaves it
 ```
@@ -55,7 +55,7 @@ cp .env.example .env
 # put real secrets into .env:
 #   SECRETUM_JWT_SECRET=$(openssl rand -base64 48)
 #   SECRETUM_MASTER_KEYS=k1:$(openssl rand -base64 32)
-make up                       # app + PostgreSQL + MinIO
+make up                       # app + PostgreSQL + S3-compatible storage
 curl localhost:8080/readyz
 ```
 
@@ -120,7 +120,7 @@ make help    # all targets
 | `SECRETUM_MASTER_KEYS` | — | `id:base64key,...`, 32-byte keys (required) |
 | `SECRETUM_ACTIVE_KEY_ID` | the only key | Master key for new data keys |
 | `SECRETUM_MAX_UPLOAD_BYTES` | `33554432` | Maximum file size (32 MiB) |
-| `SECRETUM_S3_ENDPOINT` | — | S3-compatible endpoint, e.g. `minio:9000` (required) |
+| `SECRETUM_S3_ENDPOINT` | — | S3-compatible endpoint, e.g. `s3:8333` (required) |
 | `SECRETUM_S3_ACCESS_KEY`, `SECRETUM_S3_SECRET_KEY` | — | Object storage credentials |
 | `SECRETUM_S3_BUCKET` | `secretum` | Bucket, created if missing |
 | `SECRETUM_S3_USE_SSL` | `false` | Use HTTPS for object storage |
