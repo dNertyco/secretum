@@ -9,7 +9,27 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # S3-compatible object storage for local development. It runs without S3
+      s3:
+        condition: service_started
+    restart: on-failure
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible object storage for local development. It runs without S3
   # authentication, so its port is bound to localhost only.
   s3:
     image: chrislusf/seaweedfs:4.51
