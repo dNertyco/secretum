@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/dNertyco/secretum/internal/auth"
+	"github.com/dNertyco/secretum/internal/documents"
 	"github.com/dNertyco/secretum/internal/ratelimit"
 )
 
@@ -24,6 +25,8 @@ type Deps struct {
 	Logger            *slog.Logger
 	Build             BuildInfo
 	Auth              *auth.Service
+	Documents         *documents.Service
+	MaxUploadBytes    int64
 	LoginLimiter      *ratelimit.Limiter
 	AllowRegistration bool
 	Readiness         map[string]ReadinessCheck
@@ -44,9 +47,28 @@ func NewRouter(d Deps) http.Handler {
 
 	mux.HandleFunc("POST /v1/auth/register", a.register)
 	mux.HandleFunc("POST /v1/auth/login", a.login)
-	mux.Handle("GET /v1/me", a.authenticated(http.HandlerFunc(a.me)))
+	protected := map[string]http.HandlerFunc{
+		"GET /v1/me": a.me,
 
-	return requestID(recoverer(d.Logger, accessLog(d.Logger, mux)))
+		"POST /v1/documents":               a.createDocument,
+		"GET /v1/documents":                a.listDocuments,
+		"GET /v1/documents/{id}":           a.getDocument,
+		"PATCH /v1/documents/{id}":         a.renameDocument,
+		"DELETE /v1/documents/{id}":        a.deleteDocument,
+		"GET /v1/documents/{id}/content":   a.downloadDocument,
+		"POST /v1/documents/{id}/versions": a.createVersion,
+		"GET /v1/documents/{id}/versions":  a.listVersions,
+		"GET /v1/documents/{id}/audit":     a.auditLog,
+
+		"GET /v1/documents/{id}/permissions":               a.listPermissions,
+		"PUT /v1/documents/{id}/permissions/{username}":    a.putPermission,
+		"DELETE /v1/documents/{id}/permissions/{username}": a.deletePermission,
+	}
+	for pattern, h := range protected {
+		mux.Handle(pattern, a.authenticated(h))
+	}
+
+	return requestID(securityHeaders(recoverer(d.Logger, accessLog(d.Logger, mux))))
 }
 
 func (a *api) healthz(w http.ResponseWriter, _ *http.Request) {

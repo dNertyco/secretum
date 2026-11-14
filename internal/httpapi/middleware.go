@@ -81,3 +81,16 @@ func accessLog(logger *slog.Logger, next http.Handler) http.Handler {
 		)
 	})
 }
+
+// securityHeaders sets headers that keep API responses out of caches and
+// stop browsers from interpreting them as anything but their declared type.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Cache-Control", "no-store")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("X-Frame-Options", "DENY")
+		next.ServeHTTP(w, r)
+	})
+}
